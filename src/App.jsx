@@ -1,0 +1,333 @@
+import { useEffect, useMemo, useState } from "react";
+
+const FOOD_ITEMS = [
+  { id: 1, name: "Chicken Biryani", price: 220, category: "Indian", img: "https://images.unsplash.com/photo-1563379091339-03246963d96c?w=700" },
+  { id: 2, name: "Veg Biryani", price: 160, category: "Indian", img: "https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=700" },
+  { id: 3, name: "Pizza", price: 250, category: "Italian", img: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700" },
+  { id: 4, name: "Burger", price: 140, category: "Fast Food", img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700" },
+  { id: 5, name: "Masala Dosa", price: 90, category: "South Indian", img: "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=700" }
+];
+
+const readStorage = (key, fallback) => {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+export default function App() {
+  const [page, setPage] = useState("home");
+  const [users, setUsers] = useState(() => readStorage("users", []));
+  const [cart, setCart] = useState(() => readStorage("cart", []));
+  const [orders, setOrders] = useState(() => readStorage("orders", []));
+  const [current, setCurrent] = useState(() => readStorage("current", null));
+  const [coupon, setCoupon] = useState("");
+  const [discount, setDiscount] = useState(0);
+  const [couponMessage, setCouponMessage] = useState("");
+  const [formMessage, setFormMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [registerForm, setRegisterForm] = useState({ name: "", email: "", password: "", role: "user" });
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [checkout, setCheckout] = useState({ customer: "", phone: "", address: "", payment: "Cash on Delivery" });
+
+  useEffect(() => localStorage.setItem("users", JSON.stringify(users)), [users]);
+  useEffect(() => localStorage.setItem("cart", JSON.stringify(cart)), [cart]);
+  useEffect(() => localStorage.setItem("orders", JSON.stringify(orders)), [orders]);
+  useEffect(() => {
+    if (current) localStorage.setItem("current", JSON.stringify(current));
+    else localStorage.removeItem("current");
+  }, [current]);
+
+  const subtotal = useMemo(
+    () => cart.reduce((sum, item) => sum + item.price * item.qty, 0),
+    [cart]
+  );
+  const finalTotal = Math.max(0, subtotal - discount);
+  const filteredFoods = FOOD_ITEMS.filter((food) =>
+    food.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  function navigate(nextPage) {
+    setFormMessage("");
+    setPage(nextPage);
+    if (nextPage !== "cart") setCouponMessage("");
+  }
+
+  function register(event) {
+    event.preventDefault();
+    const newUser = { ...registerForm, email: registerForm.email.trim().toLowerCase() };
+    if (!newUser.name.trim() || !newUser.email || !newUser.password) {
+      setFormMessage("Please fill in all registration fields.");
+      return;
+    }
+    if (users.some((user) => user.email === newUser.email)) {
+      setFormMessage("An account with this email already exists.");
+      return;
+    }
+    setUsers((previous) => [...previous, newUser]);
+    setRegisterForm({ name: "", email: "", password: "", role: "user" });
+    setFormMessage("Registration successful. You can now log in.");
+    setPage("login");
+  }
+
+  function login(event) {
+    event.preventDefault();
+    const found = users.find(
+      (user) => user.email === loginForm.email.trim().toLowerCase() && user.password === loginForm.password
+    );
+    if (!found) {
+      setFormMessage("Invalid login details. Please register first or try again.");
+      return;
+    }
+    setCurrent(found);
+    setLoginForm({ email: "", password: "" });
+    setPage(found.role === "admin" ? "admin" : "dashboard");
+    setFormMessage("");
+  }
+
+  function logout() {
+    setCurrent(null);
+    setPage("home");
+    setDiscount(0);
+    setCoupon("");
+  }
+
+  function addToCart(food) {
+    setCart((previous) => {
+      const existing = previous.find((item) => item.id === food.id);
+      return existing
+        ? previous.map((item) => item.id === food.id ? { ...item, qty: item.qty + 1 } : item)
+        : [...previous, { ...food, qty: 1 }];
+    });
+    setDiscount(0);
+    setCouponMessage("Item added. Apply your coupon again if needed.");
+  }
+
+  function changeQuantity(id, amount) {
+    setCart((previous) =>
+      previous
+        .map((item) => item.id === id ? { ...item, qty: item.qty + amount } : item)
+        .filter((item) => item.qty > 0)
+    );
+    setDiscount(0);
+    setCouponMessage("Cart updated. Apply your coupon again if needed.");
+  }
+
+  function applyCoupon() {
+    if (coupon.trim().toUpperCase() === "FOOD10" && subtotal > 0) {
+      const amount = Math.min(subtotal * 0.10, 100);
+      setDiscount(amount);
+      setCouponMessage(`10% discount applied! You saved ₹${amount.toFixed(2)}.`);
+    } else {
+      setDiscount(0);
+      setCouponMessage(subtotal === 0 ? "Add food to your cart before applying a coupon." : "Invalid coupon code. Try FOOD10.");
+    }
+  }
+
+  function placeOrder(event) {
+    event.preventDefault();
+    if (!current) {
+      setPage("login");
+      setFormMessage("Please log in before placing an order.");
+      return;
+    }
+    if (cart.length === 0) {
+      setFormMessage("Your cart is empty. Add some food first.");
+      setPage("menu");
+      return;
+    }
+    if (!checkout.customer.trim() || !checkout.phone.trim() || !checkout.address.trim()) {
+      setFormMessage("Please complete all delivery details.");
+      return;
+    }
+    if (!/^[0-9]{10}$/.test(checkout.phone.trim())) {
+      setFormMessage("Enter a valid 10-digit phone number.");
+      return;
+    }
+    const order = {
+      id: Date.now(),
+      email: current.email,
+      name: checkout.customer.trim(),
+      phone: checkout.phone.trim(),
+      address: checkout.address.trim(),
+      payment: checkout.payment,
+      items: cart,
+      subtotal,
+      discount,
+      total: finalTotal,
+      status: "Order Placed",
+      date: new Date().toLocaleString()
+    };
+    setOrders((previous) => [...previous, order]);
+    setCart([]);
+    setCoupon("");
+    setDiscount(0);
+    setCouponMessage("");
+    setCheckout({ customer: "", phone: "", address: "", payment: "Cash on Delivery" });
+    setFormMessage("Your order has been placed successfully!");
+    setPage("orders");
+  }
+
+  function updateStatus(id, status) {
+    setOrders((previous) => previous.map((order) => order.id === id ? { ...order, status } : order));
+  }
+
+  const myOrders = current ? orders.filter((order) => order.email === current.email) : [];
+  const isAdmin = current?.role === "admin";
+
+  return (
+    <div className="app-shell">
+      <header className="site-header">
+        <button className="brand" onClick={() => navigate("home")} aria-label="FoodExpress home">
+          <span className="brand-mark">🍴</span><span>FoodExpress</span>
+        </button>
+        <nav className="main-nav">
+          {[
+            ["Home", "home"], ["Restaurants", "restaurants"], ["Menu", "menu"],
+            ["Cart", "cart"]
+          ].map(([label, target]) => (
+            <button key={target} className={page === target ? "nav-link active" : "nav-link"} onClick={() => navigate(target)}>
+              {label}{target === "cart" && cart.length > 0 ? ` (${cart.reduce((n, item) => n + item.qty, 0)})` : ""}
+            </button>
+          ))}
+          {current && <button className="nav-link" onClick={() => navigate(isAdmin ? "admin" : "orders")}>{isAdmin ? "Admin" : "My Orders"}</button>}
+          {!current ? (
+            <>
+              <button className="nav-link" onClick={() => navigate("register")}>Register</button>
+              <button className="nav-cta" onClick={() => navigate("login")}>Login</button>
+            </>
+          ) : (
+            <button className="nav-cta" onClick={logout}>Logout</button>
+          )}
+        </nav>
+      </header>
+
+      <main>
+        {page === "home" && (
+          <>
+            <section className="hero">
+              <div className="hero-copy">
+                <span className="eyebrow">FRESH • FAST • DELICIOUS</span>
+                <h1>Your favourite food,<br /><em>delivered with love.</em></h1>
+                <p>Discover delicious meals from nearby restaurants and enjoy them at home.</p>
+                <button className="primary-btn" onClick={() => navigate("menu")}>Explore food <span>→</span></button>
+                <div className="hero-note">Use coupon <strong>FOOD10</strong> for 10% off your cart.</div>
+              </div>
+              <div className="hero-art">
+                <img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=1000" alt="Fresh meal bowl" />
+                <div className="floating-tag">Made fresh, just for you ✨</div>
+              </div>
+            </section>
+            <section className="section-block">
+              <div className="section-heading"><div><span className="eyebrow">CUSTOMER FAVOURITES</span><h2>Popular picks</h2></div><button className="text-btn" onClick={() => navigate("menu")}>View full menu →</button></div>
+              <FoodGrid foods={FOOD_ITEMS.slice(0, 3)} onAdd={addToCart} />
+            </section>
+          </>
+        )}
+
+        {page === "restaurants" && (
+          <section className="section-block page-section">
+            <span className="eyebrow">GOOD FOOD, GOOD MOOD</span><h1 className="page-title">Our restaurants</h1>
+            <div className="restaurant-grid">
+              {[["Spice Hub", "Indian favourites", "🌶️"], ["Pizza Point", "Italian comfort food", "🍕"], ["Burger House", "Freshly grilled classics", "🍔"]].map(([name, desc, emoji]) => (
+                <button className="restaurant-card" key={name} onClick={() => navigate("menu")}><span>{emoji}</span><h3>{name}</h3><p>{desc}</p><b>Explore menu →</b></button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {page === "menu" && (
+          <section className="section-block page-section">
+            <span className="eyebrow">MADE TO MAKE YOU SMILE</span><h1 className="page-title">Explore our menu</h1>
+            <div className="search-row"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for a dish..." aria-label="Search food" /></div>
+            <FoodGrid foods={filteredFoods} onAdd={addToCart} />
+            {filteredFoods.length === 0 && <p className="empty-state">No dishes found. Try another search.</p>}
+          </section>
+        )}
+
+        {page === "register" && (
+          <section className="form-wrap"><form className="form-card" onSubmit={register}>
+            <span className="eyebrow">JOIN FOOD EXPRESS</span><h1>Create an account</h1><p className="muted">Register to save your details and manage orders.</p>
+            <label>Full name<input value={registerForm.name} onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })} placeholder="Your name" /></label>
+            <label>Email address<input type="email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} placeholder="you@example.com" /></label>
+            <label>Password<input type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} placeholder="Create a password" /></label>
+            <label>Account type<select value={registerForm.role} onChange={(e) => setRegisterForm({ ...registerForm, role: e.target.value })}><option value="user">Customer</option><option value="admin">Admin (demo)</option></select></label>
+            <button className="primary-btn full-btn">Register</button>
+            <p className="form-foot">Already registered? <button type="button" className="inline-link" onClick={() => navigate("login")}>Login</button></p>
+            {formMessage && <p className="notice">{formMessage}</p>}
+          </form></section>
+        )}
+
+        {page === "login" && (
+          <section className="form-wrap"><form className="form-card" onSubmit={login}>
+            <span className="eyebrow">WELCOME BACK</span><h1>Login</h1><p className="muted">Sign in to continue to FoodExpress.</p>
+            <label>Email address<input type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} placeholder="you@example.com" /></label>
+            <label>Password<input type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} placeholder="Your password" /></label>
+            <button className="primary-btn full-btn">Login</button>
+            <p className="form-foot">New to FoodExpress? <button type="button" className="inline-link" onClick={() => navigate("register")}>Create an account</button></p>
+            {formMessage && <p className="notice">{formMessage}</p>}
+          </form></section>
+        )}
+
+        {page === "dashboard" && (
+          <section className="section-block page-section"><span className="eyebrow">YOUR FOOD SPACE</span><h1 className="page-title">Welcome, {current?.name}!</h1><p className="muted">Ready to find something delicious?</p>
+            <div className="dashboard-actions"><button className="primary-btn" onClick={() => navigate("menu")}>Browse food</button><button className="secondary-btn" onClick={() => navigate("cart")}>View my cart</button><button className="secondary-btn" onClick={() => navigate("orders")}>My orders</button></div>
+          </section>
+        )}
+
+        {page === "cart" && (
+          <section className="section-block page-section narrow-section"><span className="eyebrow">ALMOST THERE</span><h1 className="page-title">Your cart</h1>
+            {cart.length === 0 ? <div className="empty-panel"><span>🛍️</span><h2>Your cart is empty</h2><p>Add your favourite dishes and they will appear here.</p><button className="primary-btn" onClick={() => navigate("menu")}>Browse menu</button></div> : <>
+              <div className="cart-list">{cart.map((item) => <div className="cart-row" key={item.id}><img src={item.img} alt={item.name} /><div className="cart-info"><h3>{item.name}</h3><p>₹{item.price} each</p></div><div className="quantity"><button onClick={() => changeQuantity(item.id, -1)} aria-label={`Remove one ${item.name}`}>−</button><b>{item.qty}</b><button onClick={() => changeQuantity(item.id, 1)} aria-label={`Add one ${item.name}`}>+</button></div><strong>₹{item.price * item.qty}</strong></div>)}</div>
+              <div className="coupon-box"><div><b>Have a coupon?</b><p>Enter FOOD10 to get 10% off (maximum ₹100).</p></div><div className="coupon-controls"><input value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="Coupon code" /><button className="secondary-btn" onClick={applyCoupon}>Apply</button></div>{couponMessage && <p className="coupon-message">{couponMessage}</p>}</div>
+              <div className="bill-card"><div><span>Subtotal</span><b>₹{subtotal.toFixed(2)}</b></div><div><span>Discount</span><b className="discount-value">− ₹{discount.toFixed(2)}</b></div><div className="bill-total"><span>Total</span><strong>₹{finalTotal.toFixed(2)}</strong></div><button className="primary-btn full-btn" onClick={() => { if (!current) { setPage("login"); setFormMessage("Please log in before checkout."); } else { setFormMessage(""); setPage("checkout"); } }}>Proceed to checkout</button></div>
+            </>}
+          </section>
+        )}
+
+        {page === "checkout" && (
+          <section className="form-wrap"><form className="form-card" onSubmit={placeOrder}>
+            <span className="eyebrow">DELIVERY DETAILS</span><h1>Checkout</h1><p className="muted">Where should we deliver your food?</p>
+            <label>Customer name<input value={checkout.customer} onChange={(e) => setCheckout({ ...checkout, customer: e.target.value })} placeholder="Full name" /></label>
+            <label>Phone number<input inputMode="numeric" value={checkout.phone} onChange={(e) => setCheckout({ ...checkout, phone: e.target.value })} placeholder="10-digit mobile number" /></label>
+            <label>Delivery address<textarea rows="3" value={checkout.address} onChange={(e) => setCheckout({ ...checkout, address: e.target.value })} placeholder="House number, street, area..." /></label>
+            <label>Payment method<select value={checkout.payment} onChange={(e) => setCheckout({ ...checkout, payment: e.target.value })}><option>Cash on Delivery</option><option>UPI (Demo)</option><option>Card (Demo)</option></select></label>
+            <div className="checkout-total"><span>Amount to pay</span><strong>₹{finalTotal.toFixed(2)}</strong></div>
+            <button className="primary-btn full-btn">Place order</button>
+            {formMessage && <p className="notice">{formMessage}</p>}
+          </form></section>
+        )}
+
+        {page === "orders" && (
+          <section className="section-block page-section"><span className="eyebrow">YOUR FOOD JOURNEY</span><h1 className="page-title">My orders</h1>
+            {!current ? <div className="empty-panel"><p>Please log in to view your orders.</p><button className="primary-btn" onClick={() => navigate("login")}>Login</button></div> : myOrders.length === 0 ? <div className="empty-panel"><span>📦</span><h2>No orders yet</h2><p>Your placed orders will show up here.</p><button className="primary-btn" onClick={() => navigate("menu")}>Order food</button></div> :
+              <div className="order-grid">{myOrders.slice().reverse().map((order) => <OrderCard key={order.id} order={order} />)}</div>}
+            {formMessage && <p className="notice">{formMessage}</p>}
+          </section>
+        )}
+
+        {page === "admin" && (
+          <section className="section-block page-section"><span className="eyebrow">MANAGE FOOD EXPRESS</span><h1 className="page-title">Admin dashboard</h1>
+            {!isAdmin ? <div className="empty-panel"><p>Admin login required.</p><button className="primary-btn" onClick={() => navigate("login")}>Login as admin</button></div> : <>
+              <div className="stats-grid"><div className="stat-card"><span>Total orders</span><strong>{orders.length}</strong></div><div className="stat-card"><span>Total revenue</span><strong>₹{orders.reduce((sum, order) => sum + order.total, 0).toFixed(2)}</strong></div><div className="stat-card"><span>Food items</span><strong>{FOOD_ITEMS.length}</strong></div></div>
+              <h2 className="subheading">Recent orders</h2>
+              {orders.length === 0 ? <p className="empty-state">No orders have been placed yet.</p> : <div className="admin-order-list">{orders.slice().reverse().map((order) => <div className="admin-order" key={order.id}><div><b>Order #{String(order.id).slice(-6)}</b><p>{order.name} · ₹{order.total.toFixed(2)}</p><small>{order.address}</small></div><select value={order.status} onChange={(e) => updateStatus(order.id, e.target.value)}><option>Order Placed</option><option>Preparing</option><option>Out for Delivery</option><option>Delivered</option></select></div>)}</div>}
+            </>}
+          </section>
+        )}
+      </main>
+
+      <footer className="site-footer"><div><b>FoodExpress</b><p>Delicious food, delivered with care.</p></div><span>© {new Date().getFullYear()} FoodExpress · Student project demo</span></footer>
+    </div>
+  );
+}
+
+function FoodGrid({ foods, onAdd }) {
+  return <div className="food-grid">{foods.map((food) => <article className="food-card" key={food.id}><div className="food-image"><img src={food.img} alt={food.name} loading="lazy" /><span>{food.category}</span></div><div className="food-card-body"><h3>{food.name}</h3><div className="food-card-bottom"><strong>₹{food.price}</strong><button onClick={() => onAdd(food)}>+ Add</button></div></div></article>)}</div>;
+}
+
+function OrderCard({ order }) {
+  return <article className="order-card"><div className="order-top"><b>Order #{String(order.id).slice(-6)}</b><span className="status-pill">{order.status}</span></div><p className="muted">{order.date}</p><div className="order-items">{order.items.map((item) => <span key={item.id}>{item.name} × {item.qty}</span>)}</div><div className="order-total"><span>Paid by {order.payment}</span><strong>₹{order.total.toFixed(2)}</strong></div></article>;
+}
