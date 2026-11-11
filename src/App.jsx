@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const FOOD_ITEMS = [
   { id: 1, name: "Chicken Biryani", price: 220, category: "Indian", img: "https://images.unsplash.com/photo-1563379091339-03246963d96c?w=700" },
