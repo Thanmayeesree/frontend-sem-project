@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import WaitGame from "./WaitGame.jsx";
 
 const API = "";
 
@@ -52,7 +53,9 @@ export default function App() {
   const [checkout, setCheckout] = useState({ customer: "", phone: "", address: "", payment: "Cash on Delivery" });
 
   useEffect(() => {
-    api("/api/menu").then(setFoodItems).catch(() => setFoodItems(FALLBACK_FOOD_ITEMS));
+    api("/api/menu")
+      .then((items) => setFoodItems(Array.isArray(items) ? items : FALLBACK_FOOD_ITEMS))
+      .catch(() => setFoodItems(FALLBACK_FOOD_ITEMS));
   }, []);
 
   useEffect(() => {
@@ -68,22 +71,28 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    if (token) api("/api/cart").then(setCart).catch(() => {});
+    if (token) api("/api/cart")
+      .then((items) => setCart(Array.isArray(items) ? items : []))
+      .catch(() => setCart([]));
     else localStorage.setItem("cart", JSON.stringify(cart));
   }, [token]);
 
   useEffect(() => {
     if (!token) return;
-    if (page === "orders") api("/api/orders").then(setOrders).catch(() => setOrders([]));
-    if (page === "admin" && current?.role === "admin") api("/api/admin/orders").then(setOrders).catch(() => setOrders([]));
+    if (page === "orders") api("/api/orders")
+      .then((items) => setOrders(Array.isArray(items) ? items : []))
+      .catch(() => setOrders([]));
+    if (page === "admin" && current?.role === "admin") api("/api/admin/orders")
+      .then((items) => setOrders(Array.isArray(items) ? items : []))
+      .catch(() => setOrders([]));
   }, [page, token, current?.role]);
 
   const subtotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.price * item.qty, 0),
+    () => (Array.isArray(cart) ? cart : []).reduce((sum, item) => sum + item.price * item.qty, 0),
     [cart]
   );
   const finalTotal = Math.max(0, subtotal - discount);
-  const filteredFoods = foodItems.filter((food) =>
+  const filteredFoods = (Array.isArray(foodItems) ? foodItems : FALLBACK_FOOD_ITEMS).filter((food) =>
     food.name.toLowerCase().includes(search.toLowerCase()) &&
     (category === "All" || food.category === category)
   );
@@ -139,7 +148,7 @@ export default function App() {
     if (token) {
       try {
         const updated = await api(`/api/cart/${food.id}`, { method: "PUT", body: JSON.stringify({ delta: 1 }) });
-        setCart(updated);
+        setCart(Array.isArray(updated) ? updated : []);
       } catch (error) {
         setFormMessage(error.message);
       }
@@ -159,7 +168,7 @@ export default function App() {
     if (token) {
       try {
         const updated = await api(`/api/cart/${id}`, { method: "PUT", body: JSON.stringify({ delta: amount }) });
-        setCart(updated);
+        setCart(Array.isArray(updated) ? updated : []);
       } catch (error) {
         setFormMessage(error.message);
       }
@@ -368,7 +377,10 @@ export default function App() {
         {page === "orders" && (
           <section className="section-block page-section"><span className="eyebrow">YOUR FOOD JOURNEY</span><h1 className="page-title">My orders</h1>
             {!current ? <div className="empty-panel"><p>Please log in to view your orders.</p><button className="primary-btn" onClick={() => navigate("login")}>Login</button></div> : myOrders.length === 0 ? <div className="empty-panel"><span>📦</span><h2>No orders yet</h2><p>Your placed orders will show up here.</p><button className="primary-btn" onClick={() => navigate("menu")}>Order food</button></div> :
-              <div className="order-grid">{myOrders.slice().reverse().map((order) => <OrderCard key={order.id} order={order} />)}</div>}
+              <>
+                {myOrders.some((order) => order.status !== "Delivered") && <WaitGame />}
+                <div className="order-grid">{myOrders.slice().reverse().map((order) => <OrderCard key={order.id} order={order} />)}</div>
+              </>}
             {formMessage && <p className="notice">{formMessage}</p>}
           </section>
         )}
