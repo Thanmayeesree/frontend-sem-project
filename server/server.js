@@ -10,7 +10,7 @@ const app = express();
 const port = Number(process.env.PORT || 3001);
 const jwtSecret = process.env.JWT_SECRET || "foodexpress-development-secret";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataFile = path.join(__dirname, "data.json");
+const dataFile = process.env.DATA_FILE || (process.env.VERCEL ? "/tmp/foodexpress-data.json" : path.join(__dirname, "data.json"));
 
 const menu = [
   { id: 1, name: "Chicken Biryani", price: 220, category: "Indian", img: "https://images.unsplash.com/photo-1547592180-85f173990554?w=700", rating: 4.8, deliveryTime: "25-30 min" },
@@ -203,4 +203,8 @@ if (await fs.stat(distPath).then(() => true).catch(() => false)) {
   });
 }
 
-app.listen(port, () => console.log(`FoodExpress API running at http://localhost:${port}`));
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.listen(port, () => console.log(`FoodExpress API running at http://localhost:${port}`));
+}
+
+export default app;
