@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 const FOOD_ITEMS = [
-  { id: 1, name: "Chicken Biryani", price: 220, category: "Indian", img: "https://images.unsplash.com/photo-1563379091339-03246963d96c?w=700" },
+  { id: 1, name: "Chicken Biryani", price: 220, category: "Indian", img: "https://images.unsplash.com/photo-1547592180-85f173990554?w=700" },
   { id: 2, name: "Veg Biryani", price: 160, category: "Indian", img: "https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=700" },
   { id: 3, name: "Pizza", price: 250, category: "Italian", img: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700" },
   { id: 4, name: "Burger", price: 140, category: "Fast Food", img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700" },
@@ -28,6 +28,7 @@ export default function App() {
   const [couponMessage, setCouponMessage] = useState("");
   const [formMessage, setFormMessage] = useState("");
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("All");
   const [registerForm, setRegisterForm] = useState({ name: "", email: "", password: "", role: "user" });
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [checkout, setCheckout] = useState({ customer: "", phone: "", address: "", payment: "Cash on Delivery" });
@@ -46,7 +47,8 @@ export default function App() {
   );
   const finalTotal = Math.max(0, subtotal - discount);
   const filteredFoods = FOOD_ITEMS.filter((food) =>
-    food.name.toLowerCase().includes(search.toLowerCase())
+    food.name.toLowerCase().includes(search.toLowerCase()) &&
+    (category === "All" || food.category === category)
   );
 
   function navigate(nextPage) {
@@ -216,7 +218,7 @@ export default function App() {
                 <div className="hero-note">Use coupon <strong>FOOD10</strong> for 10% off your cart.</div>
               </div>
               <div className="hero-art">
-                <img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=1000" alt="Fresh meal bowl" />
+                <img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=1000" alt="Fresh meal bowl" onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1547592180-85f173990554?w=1000"; }} />
                 <div className="floating-tag">Made fresh, just for you ✨</div>
               </div>
             </section>
@@ -241,7 +243,7 @@ export default function App() {
         {page === "menu" && (
           <section className="section-block page-section">
             <span className="eyebrow">MADE TO MAKE YOU SMILE</span><h1 className="page-title">Explore our menu</h1>
-            <div className="search-row"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for a dish..." aria-label="Search food" /></div>
+            <div className="menu-tools"><div className="search-row"><i className="bi bi-search"></i><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for a dish..." aria-label="Search food" /></div><div className="category-row" aria-label="Filter by category">{["All", ...new Set(FOOD_ITEMS.map((food) => food.category))].map((item) => <button key={item} className={category === item ? "category-chip active" : "category-chip"} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
             <FoodGrid foods={filteredFoods} onAdd={addToCart} />
             {filteredFoods.length === 0 && <p className="empty-state">No dishes found. Try another search.</p>}
           </section>
@@ -325,7 +327,7 @@ export default function App() {
 }
 
 function FoodGrid({ foods, onAdd }) {
-  return <div className="food-grid">{foods.map((food) => <article className="food-card" key={food.id}><div className="food-image"><img src={food.img} alt={food.name} loading="lazy" /><span>{food.category}</span></div><div className="food-card-body"><h3>{food.name}</h3><div className="food-card-bottom"><strong>₹{food.price}</strong><button onClick={() => onAdd(food)}>+ Add</button></div></div></article>)}</div>;
+  return <div className="food-grid">{foods.map((food, index) => <article className="food-card" key={food.id} style={{ "--card-delay": `${index * 70}ms` }}><div className="food-image"><img src={food.img} alt={food.name} loading="lazy" onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1547592180-85f173990554?w=700"; }} /><span>{food.category}</span><button className="favorite-btn" aria-label={`Save ${food.name}`}><i className="bi bi-heart"></i></button></div><div className="food-card-body"><div className="food-card-meta"><span><i className="bi bi-star-fill"></i> 4.8</span><span><i className="bi bi-clock"></i> 25–30 min</span></div><h3>{food.name}</h3><div className="food-card-bottom"><strong><small>₹</small>{food.price}</strong><button onClick={() => onAdd(food)}><i className="bi bi-plus-lg"></i> Add</button></div></div></article>)}</div>;
 }
 
 function OrderCard({ order }) {
