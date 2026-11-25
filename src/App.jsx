@@ -1,7 +1,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const FOOD_ITEMS = [
-  { id: 1, name: "Chicken Biryani", price: 220, category: "Indian", img: "https://images.unsplash.com/photo-1547592180-85f173990554?w=700" },
+const API = "";
+
+async function api(path, options = {}) {
+  const token = localStorage.getItem("token")?.replace(/^"|"$/g, "") || "";
+  const response = await fetch(`${API}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers
+    }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || "Something went wrong.");
+  return data;
+}
+
+const FALLBACK_FOOD_ITEMS = [
+  { id: 1, name: "Chicken Biryani", price: 220, category: "Indian", img: "https://images.unsplash.com/photo-1563379091339-03246963d96c?w=700" },
   { id: 2, name: "Veg Biryani", price: 160, category: "Indian", img: "https://images.unsplash.com/photo-1589302168068-964664d93dc0?w=700" },
   { id: 3, name: "Pizza", price: 250, category: "Italian", img: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700" },
   { id: 4, name: "Burger", price: 140, category: "Fast Food", img: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700" },
@@ -19,10 +36,11 @@ const readStorage = (key, fallback) => {
 
 export default function App() {
   const [page, setPage] = useState("home");
-  const [users, setUsers] = useState(() => readStorage("users", []));
+  const [foodItems, setFoodItems] = useState(FALLBACK_FOOD_ITEMS);
   const [cart, setCart] = useState(() => readStorage("cart", []));
-  const [orders, setOrders] = useState(() => readStorage("orders", []));
-  const [current, setCurrent] = useState(() => readStorage("current", null));
+  const [orders, setOrders] = useState([]);
+  const [current, setCurrent] = useState(null);
+  const [token, setToken] = useState(() => readStorage("token", ""));
   const [coupon, setCoupon] = useState("");
   const [discount, setDiscount] = useState(0);
   const [couponMessage, setCouponMessage] = useState("");
@@ -33,20 +51,39 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [checkout, setCheckout] = useState({ customer: "", phone: "", address: "", payment: "Cash on Delivery" });
 
-  useEffect(() => localStorage.setItem("users", JSON.stringify(users)), [users]);
-  useEffect(() => localStorage.setItem("cart", JSON.stringify(cart)), [cart]);
-  useEffect(() => localStorage.setItem("orders", JSON.stringify(orders)), [orders]);
   useEffect(() => {
-    if (current) localStorage.setItem("current", JSON.stringify(current));
-    else localStorage.removeItem("current");
-  }, [current]);
+    api("/api/menu").then(setFoodItems).catch(() => setFoodItems(FALLBACK_FOOD_ITEMS));
+  }, []);
+
+  useEffect(() => {
+    if (!token) {
+      setCurrent(null);
+      return;
+    }
+    api("/api/auth/me").then(setCurrent).catch(() => {
+      setToken("");
+      localStorage.removeItem("token");
+      setCurrent(null);
+    });
+  }, [token]);
+
+  useEffect(() => {
+    if (token) api("/api/cart").then(setCart).catch(() => {});
+    else localStorage.setItem("cart", JSON.stringify(cart));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (page === "orders") api("/api/orders").then(setOrders).catch(() => setOrders([]));
+    if (page === "admin" && current?.role === "admin") api("/api/admin/orders").then(setOrders).catch(() => setOrders([]));
+  }, [page, token, current?.role]);
 
   const subtotal = useMemo(
     () => cart.reduce((sum, item) => sum + item.price * item.qty, 0),
     [cart]
   );
   const finalTotal = Math.max(0, subtotal - discount);
-  const filteredFoods = FOOD_ITEMS.filter((food) =>
+  const filteredFoods = foodItems.filter((food) =>
     food.name.toLowerCase().includes(search.toLowerCase()) &&
     (category === "All" || food.category === category)
   );
@@ -57,78 +94,105 @@ export default function App() {
     if (nextPage !== "cart") setCouponMessage("");
   }
 
-  function register(event) {
+  async function register(event) {
     event.preventDefault();
-    const newUser = { ...registerForm, email: registerForm.email.trim().toLowerCase() };
-    if (!newUser.name.trim() || !newUser.email || !newUser.password) {
-      setFormMessage("Please fill in all registration fields.");
-      return;
+    try {
+      const data = await api("/api/auth/register", { method: "POST", body: JSON.stringify(registerForm) });
+      localStorage.setItem("token", JSON.stringify(data.token));
+      setToken(data.token);
+      setCurrent(data.user);
+      setRegisterForm({ name: "", email: "", password: "", role: "user" });
+      setFormMessage("");
+      setPage("dashboard");
+    } catch (error) {
+      setFormMessage(error.message);
     }
-    if (users.some((user) => user.email === newUser.email)) {
-      setFormMessage("An account with this email already exists.");
-      return;
-    }
-    setUsers((previous) => [...previous, newUser]);
-    setRegisterForm({ name: "", email: "", password: "", role: "user" });
-    setFormMessage("Registration successful. You can now log in.");
-    setPage("login");
   }
 
-  function login(event) {
+  async function login(event) {
     event.preventDefault();
-    const found = users.find(
-      (user) => user.email === loginForm.email.trim().toLowerCase() && user.password === loginForm.password
-    );
-    if (!found) {
-      setFormMessage("Invalid login details. Please register first or try again.");
-      return;
+    try {
+      const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(loginForm) });
+      localStorage.setItem("token", JSON.stringify(data.token));
+      setToken(data.token);
+      setCurrent(data.user);
+      setLoginForm({ email: "", password: "" });
+      setPage(data.user.role === "admin" ? "admin" : "dashboard");
+      setFormMessage("");
+    } catch (error) {
+      setFormMessage(error.message);
     }
-    setCurrent(found);
-    setLoginForm({ email: "", password: "" });
-    setPage(found.role === "admin" ? "admin" : "dashboard");
-    setFormMessage("");
   }
 
   function logout() {
+    localStorage.removeItem("token");
+    setToken("");
     setCurrent(null);
+    setCart(readStorage("cart", []));
+    setOrders([]);
     setPage("home");
     setDiscount(0);
     setCoupon("");
   }
 
-  function addToCart(food) {
-    setCart((previous) => {
-      const existing = previous.find((item) => item.id === food.id);
-      return existing
-        ? previous.map((item) => item.id === food.id ? { ...item, qty: item.qty + 1 } : item)
-        : [...previous, { ...food, qty: 1 }];
-    });
+  async function addToCart(food) {
+    if (token) {
+      try {
+        const updated = await api(`/api/cart/${food.id}`, { method: "PUT", body: JSON.stringify({ delta: 1 }) });
+        setCart(updated);
+      } catch (error) {
+        setFormMessage(error.message);
+      }
+    } else {
+      setCart((previous) => {
+        const existing = previous.find((item) => item.id === food.id);
+        return existing
+          ? previous.map((item) => item.id === food.id ? { ...item, qty: item.qty + 1 } : item)
+          : [...previous, { ...food, qty: 1 }];
+      });
+    }
     setDiscount(0);
     setCouponMessage("Item added. Apply your coupon again if needed.");
   }
 
-  function changeQuantity(id, amount) {
-    setCart((previous) =>
-      previous
-        .map((item) => item.id === id ? { ...item, qty: item.qty + amount } : item)
-        .filter((item) => item.qty > 0)
-    );
+  async function changeQuantity(id, amount) {
+    if (token) {
+      try {
+        const updated = await api(`/api/cart/${id}`, { method: "PUT", body: JSON.stringify({ delta: amount }) });
+        setCart(updated);
+      } catch (error) {
+        setFormMessage(error.message);
+      }
+    } else {
+      setCart((previous) => previous.map((item) => item.id === id ? { ...item, qty: item.qty + amount } : item).filter((item) => item.qty > 0));
+    }
     setDiscount(0);
     setCouponMessage("Cart updated. Apply your coupon again if needed.");
   }
 
-  function applyCoupon() {
-    if (coupon.trim().toUpperCase() === "FOOD10" && subtotal > 0) {
-      const amount = Math.min(subtotal * 0.10, 100);
-      setDiscount(amount);
-      setCouponMessage(`10% discount applied! You saved ₹${amount.toFixed(2)}.`);
-    } else {
+  async function applyCoupon() {
+    if (!token) {
+      if (coupon.trim().toUpperCase() === "FOOD10" && subtotal > 0) {
+        const amount = Math.min(subtotal * 0.10, 100);
+        setDiscount(amount);
+        setCouponMessage(`10% discount applied! You saved ₹${amount.toFixed(2)}.`);
+      } else {
+        setDiscount(0);
+        setCouponMessage(subtotal === 0 ? "Add food to your cart before applying a coupon." : "Invalid coupon code. Try FOOD10.");
+      }
+      return;
+    }
+    try {
+      const result = await api("/api/coupon", { method: "POST", body: JSON.stringify({ code: coupon }) });
+      setDiscount(result.discount);
+      setCouponMessage(`10% discount applied! You saved ₹${result.discount.toFixed(2)}.`);
+    } catch (error) {
       setDiscount(0);
-      setCouponMessage(subtotal === 0 ? "Add food to your cart before applying a coupon." : "Invalid coupon code. Try FOOD10.");
+      setCouponMessage(error.message);
     }
   }
 
-  function placeOrder(event) {
+  async function placeOrder(event) {
     event.preventDefault();
     if (!current) {
       setPage("login");
@@ -148,35 +212,34 @@ export default function App() {
       setFormMessage("Enter a valid 10-digit phone number.");
       return;
     }
-    const order = {
-      id: Date.now(),
-      email: current.email,
-      name: checkout.customer.trim(),
-      phone: checkout.phone.trim(),
-      address: checkout.address.trim(),
-      payment: checkout.payment,
-      items: cart,
-      subtotal,
-      discount,
-      total: finalTotal,
-      status: "Order Placed",
-      date: new Date().toLocaleString()
-    };
-    setOrders((previous) => [...previous, order]);
-    setCart([]);
-    setCoupon("");
-    setDiscount(0);
-    setCouponMessage("");
-    setCheckout({ customer: "", phone: "", address: "", payment: "Cash on Delivery" });
-    setFormMessage("Your order has been placed successfully!");
-    setPage("orders");
+    try {
+      const order = await api("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({ ...checkout, customer: checkout.customer.trim(), phone: checkout.phone.trim(), address: checkout.address.trim(), coupon: discount > 0 ? "FOOD10" : "" })
+      });
+      setOrders((previous) => [order, ...previous]);
+      setCart([]);
+      setCoupon("");
+      setDiscount(0);
+      setCouponMessage("");
+      setCheckout({ customer: "", phone: "", address: "", payment: "Cash on Delivery" });
+      setFormMessage("Your order has been placed successfully!");
+      setPage("orders");
+    } catch (error) {
+      setFormMessage(error.message);
+    }
   }
 
-  function updateStatus(id, status) {
-    setOrders((previous) => previous.map((order) => order.id === id ? { ...order, status } : order));
+  async function updateStatus(id, status) {
+    try {
+      const updated = await api(`/api/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      setOrders((previous) => previous.map((order) => order.id === id ? updated : order));
+    } catch (error) {
+      setFormMessage(error.message);
+    }
   }
 
-  const myOrders = current ? orders.filter((order) => order.email === current.email) : [];
+  const myOrders = orders;
   const isAdmin = current?.role === "admin";
 
   return (
@@ -218,13 +281,13 @@ export default function App() {
                 <div className="hero-note">Use coupon <strong>FOOD10</strong> for 10% off your cart.</div>
               </div>
               <div className="hero-art">
-                <img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=1000" alt="Fresh meal bowl" onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1547592180-85f173990554?w=1000"; }} />
+                <img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=1000" alt="Fresh meal bowl" />
                 <div className="floating-tag">Made fresh, just for you ✨</div>
               </div>
             </section>
             <section className="section-block">
               <div className="section-heading"><div><span className="eyebrow">CUSTOMER FAVOURITES</span><h2>Popular picks</h2></div><button className="text-btn" onClick={() => navigate("menu")}>View full menu →</button></div>
-              <FoodGrid foods={FOOD_ITEMS.slice(0, 3)} onAdd={addToCart} />
+              <FoodGrid foods={foodItems.slice(0, 3)} onAdd={addToCart} />
             </section>
           </>
         )}
@@ -243,7 +306,7 @@ export default function App() {
         {page === "menu" && (
           <section className="section-block page-section">
             <span className="eyebrow">MADE TO MAKE YOU SMILE</span><h1 className="page-title">Explore our menu</h1>
-            <div className="menu-tools"><div className="search-row"><i className="bi bi-search"></i><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for a dish..." aria-label="Search food" /></div><div className="category-row" aria-label="Filter by category">{["All", ...new Set(FOOD_ITEMS.map((food) => food.category))].map((item) => <button key={item} className={category === item ? "category-chip active" : "category-chip"} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
+            <div className="menu-tools"><div className="search-row"><i className="bi bi-search"></i><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search for a dish..." aria-label="Search food" /></div><div className="category-row" aria-label="Filter by category">{["All", ...new Set(foodItems.map((food) => food.category))].map((item) => <button key={item} className={category === item ? "category-chip active" : "category-chip"} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
             <FoodGrid foods={filteredFoods} onAdd={addToCart} />
             {filteredFoods.length === 0 && <p className="empty-state">No dishes found. Try another search.</p>}
           </section>
@@ -255,7 +318,7 @@ export default function App() {
             <label>Full name<input value={registerForm.name} onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })} placeholder="Your name" /></label>
             <label>Email address<input type="email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} placeholder="you@example.com" /></label>
             <label>Password<input type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} placeholder="Create a password" /></label>
-            <label>Account type<select value={registerForm.role} onChange={(e) => setRegisterForm({ ...registerForm, role: e.target.value })}><option value="user">Customer</option><option value="admin">Admin (demo)</option></select></label>
+            <label>Account type<select value="user" disabled><option value="user">Customer</option></select></label>
             <button className="primary-btn full-btn">Register</button>
             <p className="form-foot">Already registered? <button type="button" className="inline-link" onClick={() => navigate("login")}>Login</button></p>
             {formMessage && <p className="notice">{formMessage}</p>}
@@ -313,7 +376,7 @@ export default function App() {
         {page === "admin" && (
           <section className="section-block page-section"><span className="eyebrow">MANAGE FOOD EXPRESS</span><h1 className="page-title">Admin dashboard</h1>
             {!isAdmin ? <div className="empty-panel"><p>Admin login required.</p><button className="primary-btn" onClick={() => navigate("login")}>Login as admin</button></div> : <>
-              <div className="stats-grid"><div className="stat-card"><span>Total orders</span><strong>{orders.length}</strong></div><div className="stat-card"><span>Total revenue</span><strong>₹{orders.reduce((sum, order) => sum + order.total, 0).toFixed(2)}</strong></div><div className="stat-card"><span>Food items</span><strong>{FOOD_ITEMS.length}</strong></div></div>
+              <div className="stats-grid"><div className="stat-card"><span>Total orders</span><strong>{orders.length}</strong></div><div className="stat-card"><span>Total revenue</span><strong>₹{orders.reduce((sum, order) => sum + order.total, 0).toFixed(2)}</strong></div><div className="stat-card"><span>Food items</span><strong>{foodItems.length}</strong></div></div>
               <h2 className="subheading">Recent orders</h2>
               {orders.length === 0 ? <p className="empty-state">No orders have been placed yet.</p> : <div className="admin-order-list">{orders.slice().reverse().map((order) => <div className="admin-order" key={order.id}><div><b>Order #{String(order.id).slice(-6)}</b><p>{order.name} · ₹{order.total.toFixed(2)}</p><small>{order.address}</small></div><select value={order.status} onChange={(e) => updateStatus(order.id, e.target.value)}><option>Order Placed</option><option>Preparing</option><option>Out for Delivery</option><option>Delivered</option></select></div>)}</div>}
             </>}
@@ -327,7 +390,7 @@ export default function App() {
 }
 
 function FoodGrid({ foods, onAdd }) {
-  return <div className="food-grid">{foods.map((food, index) => <article className="food-card" key={food.id} style={{ "--card-delay": `${index * 70}ms` }}><div className="food-image"><img src={food.img} alt={food.name} loading="lazy" onError={(event) => { event.currentTarget.src = "https://images.unsplash.com/photo-1547592180-85f173990554?w=700"; }} /><span>{food.category}</span><button className="favorite-btn" aria-label={`Save ${food.name}`}><i className="bi bi-heart"></i></button></div><div className="food-card-body"><div className="food-card-meta"><span><i className="bi bi-star-fill"></i> 4.8</span><span><i className="bi bi-clock"></i> 25–30 min</span></div><h3>{food.name}</h3><div className="food-card-bottom"><strong><small>₹</small>{food.price}</strong><button onClick={() => onAdd(food)}><i className="bi bi-plus-lg"></i> Add</button></div></div></article>)}</div>;
+  return <div className="food-grid">{foods.map((food, index) => <article className="food-card" key={food.id} style={{ "--card-delay": `${index * 70}ms` }}><div className="food-image"><img src={food.img} alt={food.name} loading="lazy" /><span>{food.category}</span><button className="favorite-btn" aria-label={`Save ${food.name}`}><i className="bi bi-heart"></i></button></div><div className="food-card-body"><div className="food-card-meta"><span><i className="bi bi-star-fill"></i> 4.8</span><span><i className="bi bi-clock"></i> 25–30 min</span></div><h3>{food.name}</h3><div className="food-card-bottom"><strong><small>₹</small>{food.price}</strong><button onClick={() => onAdd(food)}><i className="bi bi-plus-lg"></i> Add</button></div></div></article>)}</div>;
 }
 
 function OrderCard({ order }) {

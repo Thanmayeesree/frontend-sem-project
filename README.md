@@ -1,42 +1,60 @@
 # FoodExpress React + Vite
 
-This is a React conversion of the uploaded FoodExpress HTML project.
+A full-stack food ordering demo built with React, Bootstrap, Express, JWT authentication, and JSON file persistence.
 
 ## Requirements
-- Node.js (LTS)
-- npm
-- VS Code (recommended)
 
-## Run the project
-Open this folder in VS Code, then run these commands in the terminal:
+- Node.js LTS
+- npm
+
+## Run development servers
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite (usually http://localhost:5173).
+This starts the React app on Vite and the Express API on port `3001`. Open the Vite URL printed in the terminal.
 
-## Create a production build
+## Run production build
+
 ```bash
-npm run build
+npm start
 ```
 
-## Included features
-- Home page and restaurant cards
-- Food menu with search
-- Registration and login demo
-- Customer dashboard
-- Cart with quantity controls
-- FOOD10 coupon: 10% off, capped at ₹100
-- Checkout with delivery validation
-- Customer order history
-- Admin dashboard and order-status updates
-- Browser localStorage persistence
+This builds the React app and serves it together with the API on port `3001`.
 
-## Important project notes
-- This is a frontend/student demonstration project. User accounts and orders are stored in the current browser using localStorage.
-- Passwords are not securely protected. Do not use real personal credentials.
-- The demo allows choosing an Admin role during registration. A real application must use server-side authentication and authorization.
-- UPI and card options are labels for demonstration only; no real payment is processed.
-- Food images load from Unsplash and need an internet connection.
+## Demo admin
+
+- Email: `admin@foodexpress.com`
+- Password: `Admin@123`
+
+Change these credentials and use environment-managed secrets before deploying publicly.
+
+## Backend features
+
+- bcrypt password hashing
+- JWT registration, login, and session verification
+- Server-side menu API
+- Authenticated persistent carts
+- Server-calculated coupons and totals
+- Delivery validation and order creation
+- Customer order history
+- Admin order management and statistics
+- Protected admin routes
+- Persistent JSON data storage in `server/data.json`
+
+## Included frontend features
+
+- Responsive Bootstrap and React UI
+- Search and category filtering
+- Cart quantities and checkout
+- `FOOD10` coupon, 10% off with a ₹100 maximum
+- Order history and admin status controls
+
+## Project notes
+
+- This project is a demonstration, not a production payment or authentication platform.
+- Set `JWT_SECRET` in the environment before deployment.
+- UPI and card selections are demonstration payment labels; no real transaction is processed.
+- Food images are loaded from Unsplash and require internet access.
